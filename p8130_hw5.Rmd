@@ -1,6 +1,6 @@
 ---
 title: "p8130_hw5"
-author: "Catherine"
+author: "Zhiqian Fang - zf2212"
 date: "12/2/2018"
 output:
   pdf_document:
