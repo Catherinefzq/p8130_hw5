@@ -1,0 +1,496 @@
+---
+title: "p8130_hw5"
+author: "Catherine"
+date: "12/2/2018"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(faraway)
+library(broom)
+library("leaps")
+library(purrr)
+```
+
+## Problem 1 
+
+Explore the dataset and generate appropriate descriptive statistics and relevant graphs for all variables of interest (continuous and categorical) – no test required. 
+
+```{r}
+state_data = state.x77 %>% as.tibble() %>% janitor::clean_names()
+
+summary_df = skimr::skim_to_wide(state_data) %>% 
+  mutate(min = p0, 
+         max = p100, 
+         median = p50, 
+         IQR = (as.numeric(p75) - as.numeric(p25)), 
+         range = (as.numeric(p100) - as.numeric(p0))) %>% 
+  select(type, variable, mean, sd, min, median, max, range, IQR, hist)
+
+knitr::kable(summary_df, digits = 3, caption = "Descriptive Statistics for All Variables")
+```
+
+__Comment__
+
+All the variables are continuous. Therefore, I chose mean and median as measures of location, range, IQR and sd as measures of dispersion.
+
+```{r}
+cor(state_data) %>% knitr::kable(digits = 3, caption = "Correlation Table")
+
+pairs(state_data)
+```
+
+__Comment__
+
+From the table, `life_exp` and `murder` have a strong negative correlation. Also, `murder` has a strong positive correaltion with `illiteracy`, which need more investigation.
+
+```{r}
+state_data %>% 
+  select(life_exp, murder) %>% 
+  plot(main = "life_exp vs. murder")  
+
+state_data %>% 
+  select(murder, illiteracy) %>% 
+  plot(main = "murder vs. illiteracy")
+
+state_data %>% 
+  ggplot(aes(x = life_exp)) +
+  geom_histogram()
+```
+
+__Comment__
+
+Make plot to show the correlation between `life_exp` and `murder`, `murder` and `illiteracy`. Also, check the distribution of `life_exp`, which is approximately normal distribution. I decided not to do any transformation.
+
+## Problem 2 
+
+Use automatic procedures to find a ‘best subset’ of the full model. 
+
+```{r}
+fit_all = lm(life_exp ~ ., data = state_data)
+summary(fit_all)$coef %>% knitr::kable()
+```
+
+### Backward elimination
+
+Take out non-significant variables, starting with the highest p-value
+
+```{r}
+# No area
+step1 = update(fit_all, . ~ . -area)
+summary(step1)
+
+# No income
+step2 = update(step1, . ~ . -income)
+summary(step2)
+
+# No illiteracy
+step3 = update(step2, . ~ . -illiteracy)
+summary(step3)
+
+# No population
+step4 = update(step3, . ~ . -population)
+summary(step4)
+```
+
+__Comment__
+
+From the Backward elimination, we got `life_exp ~ population + murder + hs_grad + frost`. I keep the `population` as it contributes to the goodness of fit for the model.
+
+__life expectancy =  71 - 0.3murder + 0.0466hs_grad + -0.00594frost + 0.0000501population__
+
+### Forward elimination
+
+Take in significant variables, starting with the lowest p-value
+
+_Step 1:_ Fit simple linear regressions for all variables,look for the variable with lowest p-value
+
+```{r}
+fit1 = lm(life_exp ~ population, data = state_data)
+tidy(fit1)
+fit2 = lm(life_exp ~ income, data = state_data)
+tidy(fit2)
+fit3 = lm(life_exp ~ illiteracy, data = state_data)
+tidy(fit3)
+fit4 = lm(life_exp ~ murder, data = state_data)
+tidy(fit4)
+fit5 = lm(life_exp ~ hs_grad, data = state_data)
+tidy(fit5)
+fit6 = lm(life_exp ~ frost, data = state_data)
+tidy(fit6)
+```
+
+_Step 2:_ Enter first the one with the lowest p-value: murder. Enter the one with the lowest p-value in the rest
+
+```{r}
+forward1 = lm(life_exp ~ murder, data = state_data)
+tidy(forward1)
+
+fit1 = update(forward1, . ~ . + illiteracy)
+tidy(fit1)
+fit2 = update(forward1, . ~ . + hs_grad)
+tidy(fit2)
+fit3 = update(forward1, . ~ . + income)
+tidy(fit3)
+fit4 = update(forward1, . ~ . + frost)
+tidy(fit4)
+fit5 = update(forward1, . ~ . + population)
+tidy(fit5)
+```
+
+_Step 3:_ Enter the one with the lowest p-value: hs_grad. Enter the one with the lowest p-value in the rest.
+```{r}
+forward2 = update(forward1, . ~ . + hs_grad)
+tidy(forward2)
+
+fit1 = update(forward2, . ~ . + illiteracy)
+tidy(fit1)
+fit2 = update(forward2, . ~ . + income)
+tidy(fit2)
+fit3 = update(forward2, . ~ . + frost)
+tidy(fit3)
+fit4 = update(forward2, . ~ . + population)
+tidy(fit4)
+```
+
+_Step 4:_ Enter the one with the lowest p-value: frost. Enter the one with the lowest p-value in the rest
+
+```{r}
+forward3 = update(forward2, . ~ . + frost)
+tidy(forward3)
+
+fit1 = update(forward3, . ~ . + illiteracy)
+tidy(fit1)
+fit2 = update(forward3, . ~ . + income)
+tidy(fit2)
+fit3 = update(forward3, . ~ . + population)
+tidy(fit3)
+```
+
+_Step 5:_ Enter the one with the lowest p-value: population. Enter the one with the lowest p-value in the rest
+
+```{r}
+forward4 = update(forward3, . ~ . + population)
+tidy(forward4)
+
+fit1 = update(forward4, . ~ . + income)
+tidy(fit1)
+fit2 = update(forward4, . ~ . + illiteracy)
+tidy(fit2)
+```
+
+P-value of all new added variables are larger than __0.1__, which means that they are not significant predictors, and we stop here.
+
+The model we obtained is `life_exp ~ murder + hs_grad + frost + population`.
+
+__life expectancy = 71 - 0.3murder + 0.0466hs_grad + -0.00594frost + 0.0000501population__
+
+```{r}
+fit_final = lm(life_exp ~ murder + hs_grad + frost + population, data = state_data)
+summary(fit_final)
+```
+
+### Stepwise elimination
+
+```{r}
+fit_all = lm(life_exp ~ ., data = state_data)
+step_wise = step(fit_all, direction = 'backward')
+```
+
+__Comment__
+
+The model we obtained is `life_exp ~ murder + hs_grad + frost + population` with the smallest `AIC`.
+
+__life expectancy =  71 - 0.3murder + 0.0466hs_grad + -0.00594frost + 0.0000501population__
+
+### Present the results and comment on the following:
+
+#### a) Do the procedures generate the same model?
+
+Answer:  Yes, all three precedures generate the same model, which is `life_exp ~ murder + hs_grad + frost + population`.
+
+#### b) Is there any variable a close call? What was your decision: keep or discard? Provide arguments for your choice. (Note: this question might have more or less relevance depending on the ‘subset’ you choose).
+
+Answer: In the backward and forwad elimination, `population` is a close call. My decision is keep it in our model. First, by look at the `Adjusted R-square` changes of adding `population` in our model, I found out `Adjusted R-square` incresased. Also, the cut-off p-value is 0.1, we can be less strict in this procedures and drop the variable in next step.
+
+#### c) Is there any association between ‘Illiteracy’ and ‘HS graduation rate’? Does your ‘subset’ contain both?
+
+```{r}
+cor(state_data$illiteracy, state_data$hs_grad)
+```
+
+Answer: Yes, from the correlation table in problem 1, we can see 'Illiteracy' and 'HS graduation rate' has a negative correlation which is `-0.657`, which means that higher HS graduation rate may decrease Illiteracy. The 'subset' doesn't contain both.
+
+### Problem 3
+
+Use criterion-based procedures studied in class to guide your selection of the ‘best subset’.
+Summarize your results 
+
+```{r function}
+best <- function(model, ...) 
+{
+  subsets <- regsubsets(formula(model), model.frame(model), ...)
+  subsets <- with(summary(subsets),
+                  cbind(p = as.numeric(rownames(which)), which, rss, rsq, adjr2, cp, bic))
+  
+  return(subsets)
+}  
+```
+
+```{r}
+summary_best = round(best(fit_all, nbest = 1), 4) %>% as.tibble()
+
+summary_best
+
+par(mar=c(4,4,1,1))
+par(mfrow=c(1,2))
+
+plot(2:8, summary_best$cp, xlab="No of parameters", ylab="Cp Statistic")
+abline(0,1)
+
+plot(2:8, summary_best$adjr2, xlab="No of parameters", ylab="Adj R2")
+```
+
+__Comment__
+
+By doing models compare in terms of AIC, R-adj and Cp, we obtained a model with 5 parameters (4 predictors) because 5 parameters' model has `Cp` value less than `n` and highest `Adj R2`. In the `Best` table, the best model with 4 predictors is `life_exp ~ murder + hs_grad + frost + population`. 
+
+## Problem 4
+
+Compare the two ‘subsets’ from parts 2 and 3 and recommend a ‘final’ model. Using this ‘final’
+model do the following:
+
+Answer: Actually, we found the exactly same model from part 2 and 3, which was amazing. Our final model is `life_exp ~ murder + hs_grad + frost + population`.
+
+#### a) Identify any leverage and/or influential points and take appropriate measures.
+
+__Diagnostics Plot__
+
+First, let's take a look at the plots of our model.
+
+```{r fig.height=10}
+par(mfrow = c(2,2))
+plot(fit_final)
+```
+
+__Comment__
+
+In `Residuals vs Fitted` and `Quantile–Quantile Plot`, R detect three potential outliers, which are `40`, `19` and `11` observations. 
+
+In `Residuals vs Leverage`, R detect some observations at the upper right or lower right corner and cases outside of a dashed line, which are `11`, `47` and `19`.
+
+__Detect outliers in Y using ‘studentized residuals’__
+
+```{r}
+sr = rstandard(fit_final) %>% as_tibble()
+outlier_y = sr %>% filter(abs(value) >2.5)
+max(abs(sr))
+```
+
+__Comment__
+
+As the max $R_{i}$ value is `max(abs(sr))`. There are no oulier in Y being detected.
+
+__Detect outliners in X using Leverage values__
+
+```{r}
+fit_hat = hatvalues(fit_final) %>% as_tibble() %>% mutate(n = 1:50)
+outlier_x = cbind(fit_hat %>% filter(abs(value) > 0.2), 
+                 fit_hat %>% filter(abs(value) > (2*5/50))) 
+names(outlier_x) = c("over_0.2", "observation_n","over_2p/n", "observation_n") 
+knitr::kable(outlier_x)
+```
+
+__Comment__
+
+By taking look at the $h_{ii}$ values, we detect five observations with $h_{ii} > 0.2$ and $h{ii} > 2p/n$. They are the same observations: `2`, `5`, `11`, `28`, `32`. They are the potential outliers in X.
+
+__Influencial Observation__
+
+Not all outliers are influential. Therefore, we need to test the influence of the outliers. 
+Using DFFITS test the difference of fitted value with/without an observation and Cook's Distance to find concerned values.
+
+```{r}
+tb = influence.measures(step_wise)[["infmat"]] %>% as_tibble() %>% 
+  mutate(n = 1:50) %>% 
+  select(dffit, cook.d, n) %>% 
+  filter(abs(dffit)>1|abs(cook.d)>0.5)
+knitr::kable(tb)
+```
+
+__Comment__
+
+Consider `DFFITS` and `Cook's Distance`, we found out an influencitial outlier `11`. The difference is large between fitted value with/without `11` observation. Next, we can take a look at the change of fitted value with/without `11`.
+
+```{r}
+without11 = state_data[-11,]
+fit_with11 = lm(life_exp ~ murder + hs_grad + frost + population, data = state_data)
+fit_without11 = lm(life_exp ~ murder + hs_grad + frost + population, data = without11)
+
+sum1 = summary(fit_with11)$coef 
+sum2 = summary(fit_without11)$coef
+
+knitr::kable(sum1)
+knitr::kable(sum2)
+
+(sum1[2]-sum2[2])/sum1[2]
+(sum1[3]-sum2[3])/sum1[3]
+(sum1[4]-sum2[4])/sum1[4]
+(sum1[5]-sum2[5])/sum1[5]
+```
+
+__Comment__
+
+After calculating the coefficient changes for each variables, we found that the changes are significant for `hs_grad`, `frost` and `population`. Especially for `frost`, the `frost` value of `11` observation is `0`. It is reasonable for us to consider the possibility of missing value. Therefore, `11` need to be exclude from our dataset. 
+
+
+#### b) Check the model assumptions. 
+
+```{r fig.height=10}
+fit_final_without11 = lm(life_exp ~ murder + hs_grad + frost + population, data = without11)
+
+par(mfrow = c(2,2))
+plot(fit_final_without11)
+```
+
+__Comment__
+
+In the _Residuals vs Fitted Plot_ and _Scale-Location Plot_, residual values bounce around 0 and form a horizontal ‘band’ around zero. Our model fulfill equal variance assumption. There are several values stand from the random pattern but they are not problematic.
+
+In the _Quantile–Quantile Plot_, there is a approximately straight line with small departures from normality which are not concerning. There are presence of outliers but they are not concerning with our former test. 
+
+In the _Residuals vs Leverage Plot_, there are no outlying values at the upper right or lower
+right corner, which indicates no influential cases. 
+
+## Problem 5
+
+Using the ‘final’ model chosen in part 4, focus on MSE to test the model predictive ability:
+
+#### a) Use a 10-fold cross-validation (10 repeats). 
+
+```{r}
+library(caret)
+
+# define training control
+train_control = trainControl(method ="cv", number = 10, savePredictions = TRUE)
+
+# train the model 
+model = train(life_exp ~ murder + hs_grad + frost + population, data = without11, trControl = train_control, method = 'lm')
+
+model
+
+# Examine model prediction for each fold
+predictions = model$resample
+
+```
+
+__Comment__
+
+For 10-fold cross-validation, the `RMSE` is about 0.7, `Rsquare` is about 0.8, `MAE` is about 0.6. There are about 80% of variation explained by our model. 
+
+#### b) Experiment a new, but simple bootstrap technique called “residual sampling”. 
+
+```{r}
+residuals = resid(fit_final_without11)
+wh = sample(1:length(residuals), replace = TRUE)
+boot.Y  = without11$life_exp + residuals[wh]
+boot.lm = lm(boot.Y ~ murder + hs_grad + frost + population, data = without11)
+```
+
+__Do it step by step__
+
+i) Perform a regression model with the original sample; calculate predicted values residuals �
+
+```{r}
+fit_final_without11 = lm(life_exp ~ murder + hs_grad + frost + population, data = without11)
+
+residuals = resid(fit_final_without11) 
+```
+
+ii) Randomly resample the residuals (with replacement)
+
+```{r}
+set.seed(1)
+boot_sample = function(df) {
+  sample_frac(df, replace = TRUE)
+}
+wh = sample(1:length(residuals), replace = TRUE)
+```
+
+iii) Construct new values by adding the original predicted values to the bootstrap
+residuals
+
+```{r}
+pred_y = predict(fit_final_without11)
+boot.Y = pred_y + residuals[wh]
+```
+
+iv) Regress on the original X variable(s).
+
+```{r}
+boot.lm = lm(boot.Y ~ murder + hs_grad + frost + population, data = without11)
+anova(boot.lm)["Residuals","Mean Sq"]
+```
+
+v) Repeat steps (ii) – (iv) 10 times and 1,000 times
+
+```{r}
+residual_reg = function(model) {
+  
+  residuals = resid(model)
+  
+  wh = sample(1:length(residuals), replace = TRUE)
+  
+  pred_y = predict(fit_final_without11)
+  
+  boot.Y = pred_y + residuals[wh]
+  
+  boot.lm = lm(boot.Y ~ murder + hs_grad + frost + population, data = without11)
+  
+  MSE = anova(boot.lm)["Residuals","Mean Sq"]
+  
+  as.numeric(MSE)
+}
+
+```
+
+__Rerun 10 times and 1000 times__
+
+```{r}
+set.seed(2)
+boot_straps_10 = data_frame(
+  strap_number = 1:10,
+  strap_sample = rerun(10, residual_reg(fit_final_without11))) %>% 
+  mutate(strap_sample, MSE = as.numeric(strap_sample)) %>% 
+  select(strap_number, MSE)
+
+boot_straps_1000 = data_frame(
+  strap_number = 1:1000,
+  strap_sample = rerun(1000, residual_reg(fit_final_without11))) %>% 
+  mutate(strap_sample, MSE = as.numeric(strap_sample)) %>% 
+  select(strap_number, MSE)
+```
+
+vi) Summarize the MSE for all repetitions.
+
+```{r}
+summary(boot_straps_10$MSE)
+summary(boot_straps_1000$MSE)
+```
+
+
+c) In a paragraph, compare the MSE values generated by the two methods a) and b). Briefly comment on the differences and your recommendation for assessing model performance.
+
+```{r}
+par(mfrow = c(1,3))
+boxplot(model$resample$RMSE, main = "MSE of 10-folds CV", ylim = c(0, 1.2))
+boxplot(boot_straps_10$MSE, main = "MSE (Repeat 10 times)", ylim = c(0, 1.2) )
+boxplot(boot_straps_1000$MSE, main = "MSE (Repeat 1000 times)", ylim = c(0, 1.2))
+```
+
+__Comment__
+
+The bootstrap methods has a lower MSE compared to 10-folds Cross Validation. Drawing samples with replacement from the observed data mimics drawing samples from the underlying distribution. Recalculating regression parameters for the ‘new’ samples gives an idea of the distribution of regression coefficients. Also, bootstrap doesn't require any assumption. Therefore, I would recommend bootstrap method.
