@@ -13,6 +13,7 @@ library(faraway)
 library(broom)
 library("leaps")
 library(purrr)
+library(caret)
 ```
 
 ## Problem 1 
@@ -69,12 +70,14 @@ Make plot to show the correlation between `life_exp` and `murder`, `murder` and 
 
 Use automatic procedures to find a ‘best subset’ of the full model. 
 
+### Backward elimination
+
+Start with fitting a model with all variables.
+
 ```{r}
 fit_all = lm(life_exp ~ ., data = state_data)
-summary(fit_all)$coef %>% knitr::kable()
+summary(fit_all)$coef %>% knitr::kable(caption = "Regression model with all variables")
 ```
-
-### Backward elimination
 
 Take out non-significant variables, starting with the highest p-value
 
@@ -106,7 +109,7 @@ __life expectancy =  71 - 0.3murder + 0.0466hs_grad + -0.00594frost + 0.0000501p
 
 Take in significant variables, starting with the lowest p-value
 
-_Step 1:_ Fit simple linear regressions for all variables,look for the variable with lowest p-value
+_Step 1:_ Fit simple linear regressions for all variables, look for the variable with lowest p-value
 
 ```{r}
 fit1 = lm(life_exp ~ population, data = state_data)
@@ -212,9 +215,9 @@ __life expectancy =  71 - 0.3murder + 0.0466hs_grad + -0.00594frost + 0.0000501p
 
 Answer:  Yes, all three precedures generate the same model, which is `life_exp ~ murder + hs_grad + frost + population`.
 
-#### b) Is there any variable a close call? What was your decision: keep or discard? Provide arguments for your choice. (Note: this question might have more or less relevance depending on the ‘subset’ you choose).
+#### b) Is there any variable a close call? What was your decision: keep or discard? Provide arguments for your choice.
 
-Answer: In the backward and forwad elimination, `population` is a close call. My decision is keep it in our model. First, by look at the `Adjusted R-square` changes of adding `population` in our model, I found out `Adjusted R-square` incresased. Also, the cut-off p-value is 0.1, we can be less strict in this procedures and drop the variable in next step.
+Answer: In the backward and forwad elimination, `population` is a close call. My decision is keep it in our model. First, by look at the `Adjusted R-square` changes of adding `population` in our model, I found out `Adjusted R-square` incresased. Also, the cut-off p-value is 0.1, we can be less strict in this procedures and drop the variable in next step if needed.
 
 #### c) Is there any association between ‘Illiteracy’ and ‘HS graduation rate’? Does your ‘subset’ contain both?
 
@@ -256,7 +259,7 @@ plot(2:8, summary_best$adjr2, xlab="No of parameters", ylab="Adj R2")
 
 __Comment__
 
-By doing models compare in terms of AIC, R-adj and Cp, we obtained a model with 5 parameters (4 predictors) because 5 parameters' model has `Cp` value less than `n` and highest `Adj R2`. In the `Best` table, the best model with 4 predictors is `life_exp ~ murder + hs_grad + frost + population`. 
+By doing models comparation in terms of AIC, R-adj and Cp, we obtained a model with 5 parameters (4 predictors) because 5 parameters' model has `Cp` value less than `n` and highest `Adj R2`. In the `Best` table, the best model with 4 predictors is `life_exp ~ murder + hs_grad + frost + population`. 
 
 ## Problem 4
 
@@ -271,7 +274,7 @@ __Diagnostics Plot__
 
 First, let's take a look at the plots of our model.
 
-```{r fig.height=10}
+```{r fig.height=6}
 par(mfrow = c(2,2))
 plot(fit_final)
 ```
@@ -292,7 +295,7 @@ max(abs(sr))
 
 __Comment__
 
-As the max $R_{i}$ value is `max(abs(sr))`. There are no oulier in Y being detected.
+As the max $R_{i}$ value is `r max(abs(sr))`. There are no oulier in Y being detected.
 
 __Detect outliners in X using Leverage values__
 
@@ -301,7 +304,7 @@ fit_hat = hatvalues(fit_final) %>% as_tibble() %>% mutate(n = 1:50)
 outlier_x = cbind(fit_hat %>% filter(abs(value) > 0.2), 
                  fit_hat %>% filter(abs(value) > (2*5/50))) 
 names(outlier_x) = c("over_0.2", "observation_n","over_2p/n", "observation_n") 
-knitr::kable(outlier_x)
+knitr::kable(outlier_x, caption = "Outliers of X")
 ```
 
 __Comment__
@@ -318,7 +321,7 @@ tb = influence.measures(step_wise)[["infmat"]] %>% as_tibble() %>%
   mutate(n = 1:50) %>% 
   select(dffit, cook.d, n) %>% 
   filter(abs(dffit)>1|abs(cook.d)>0.5)
-knitr::kable(tb)
+knitr::kable(tb, caption = "Influential observation")
 ```
 
 __Comment__
@@ -333,8 +336,8 @@ fit_without11 = lm(life_exp ~ murder + hs_grad + frost + population, data = with
 sum1 = summary(fit_with11)$coef 
 sum2 = summary(fit_without11)$coef
 
-knitr::kable(sum1)
-knitr::kable(sum2)
+knitr::kable(sum1, caption = "Model with observation 11")
+knitr::kable(sum2, caption = "Model without observation 11")
 
 (sum1[2]-sum2[2])/sum1[2]
 (sum1[3]-sum2[3])/sum1[3]
@@ -349,7 +352,7 @@ After calculating the coefficient changes for each variables, we found that the 
 
 #### b) Check the model assumptions. 
 
-```{r fig.height=10}
+```{r fig.height=6}
 fit_final_without11 = lm(life_exp ~ murder + hs_grad + frost + population, data = without11)
 
 par(mfrow = c(2,2))
@@ -372,13 +375,14 @@ Using the ‘final’ model chosen in part 4, focus on MSE to test the model pre
 #### a) Use a 10-fold cross-validation (10 repeats). 
 
 ```{r}
-library(caret)
-
 # define training control
 train_control = trainControl(method ="cv", number = 10, savePredictions = TRUE)
 
 # train the model 
-model = train(life_exp ~ murder + hs_grad + frost + population, data = without11, trControl = train_control, method = 'lm')
+model = train(life_exp ~ murder + hs_grad + frost + population, 
+              data = without11, 
+              trControl = train_control, 
+              method = 'lm')
 
 model
 
@@ -393,16 +397,9 @@ For 10-fold cross-validation, the `RMSE` is about 0.7, `Rsquare` is about 0.8, `
 
 #### b) Experiment a new, but simple bootstrap technique called “residual sampling”. 
 
-```{r}
-residuals = resid(fit_final_without11)
-wh = sample(1:length(residuals), replace = TRUE)
-boot.Y  = without11$life_exp + residuals[wh]
-boot.lm = lm(boot.Y ~ murder + hs_grad + frost + population, data = without11)
-```
-
 __Do it step by step__
 
-i) Perform a regression model with the original sample; calculate predicted values residuals �
+i) Perform a regression model with the original sample; calculate predicted values residuals
 
 ```{r}
 fit_final_without11 = lm(life_exp ~ murder + hs_grad + frost + population, data = without11)
@@ -457,7 +454,7 @@ residual_reg = function(model) {
 
 ```
 
-__Rerun 10 times and 1000 times__
+_Rerun 10 times and 1000 times_
 
 ```{r}
 set.seed(2)
